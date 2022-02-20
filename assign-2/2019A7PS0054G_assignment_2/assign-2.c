@@ -66,8 +66,7 @@ int main(int argc, char* argv[] )
 			exit(3);
 		}		
 		close(pipe_cp_fd[READ]);//close recv end of rec pipe
-
-		printf("Parent: recieved: %d\n", recv);
+		printf("%d: recieved: %d\n",getpid(), recv);
 
 	}
 	else //child, no sleep. print and exit
@@ -80,11 +79,9 @@ int main(int argc, char* argv[] )
 			perror("error in c read");
 			exit(3);
 		}	
-
 		close(pipe_pc_fd[READ]);//close recv end of rec pipe
-		printf("Child: recieved: %d\n", recv);
+		printf("%d: recieved: %d\n",getpid(), recv);
 		
-		// strcpy(send,"420");
 		printf("Child: my pid=%d. Type an int for parent:",getpid());	
 		scanf("%d", &send); 
 		if(write(pipe_cp_fd[WRITE], (void *) &send, sizeof(send)+1)<0)
