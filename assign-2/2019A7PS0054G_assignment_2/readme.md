@@ -4,8 +4,6 @@
 $ make all
 ```
 
-***
-
 # Notes on code execution
 
 In the fist prompt, type in int to send to the child

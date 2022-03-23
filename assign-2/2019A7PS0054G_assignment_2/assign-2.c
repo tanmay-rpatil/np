@@ -11,19 +11,12 @@
 
 pid_t pid_child;
 
-// void sig_handler(int signum){
-//   printf("\nMy child has exited\n");
-//   printf("My child's PID is=%d\n", pid_child);
-// //   printf("my pid=%d, my parent pid=%d\n",getpid(),getppid());
-//   signal(SIGCHILD,SIG_DFL);   // Re Register signal handler for default action
-// }
 
 int main(int argc, char* argv[] )
 { 
 	int pipe_cp_fd[2];
 	int pipe_pc_fd[2];
-	// char send[100] = {0};
-	// char recv[100] = {0};
+
 	int send;
 	int recv;
 
@@ -67,7 +60,7 @@ int main(int argc, char* argv[] )
 		}		
 		close(pipe_cp_fd[READ]);//close recv end of rec pipe
 		printf("%d: recieved: %d\n",getpid(), recv);
-
+		wait(NULL);
 	}
 	else //child, no sleep. print and exit
 	{
