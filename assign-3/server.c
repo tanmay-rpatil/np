@@ -1,24 +1,38 @@
 #include <sys/socket.h>
 #include <stdlib.h>
 #include <netinet/in.h>
-#include <string.h>
+
+//ip addr
+#include <netdb.h>
+#include <arpa/inet.h>
+//memset
+#include <string.h> 
+
 #include <stdio.h>
 #include <unistd.h>
 #include <signal.h>
 #include <pthread.h>
 #include <semaphore.h>
-#define MAXSIZE 1024
-#define MAXCONN 4
 
-int server_fd, client_count, clients_read;
+//for tid,ssize_t
+#include <sys/types.h>
+#include <sys/syscall.h>
+
+#define MAXSIZE 1024
+#define MAXCONN 5
+
+int server_fd, client_count;
 sem_t sem, sem_done;
-struct data_needed{
+char *err = "500";
+char *ok  = "200";
+struct data_needed{//data to pass to the workers
 	int new_sock;
 	struct sockaddr_in * new_addr;
 };
 
 void intHandler(int dummy) {
     // close(new_sock);
+	printf("-> Received  SIGINT, closing socket\n");
 	close(server_fd);
 	exit(0);
 }
@@ -28,59 +42,48 @@ void * worker(void *args){
 	int new_sock = new_data.new_sock;
 	ssize_t read_return;
 	char buffer[MAXSIZE] = {0};
-	sem_init(&sem,0,MAXCONN);
+	pid_t tid = syscall(SYS_gettid);
+	
+	strcpy(buffer,ok);//send ok msg to start transmission
+	if (send(new_sock, buffer, strlen(buffer), 0) < 0){
+		perror("\t-> error in send");
+		exit(1);
+	}
 	while(1)
 	{
-		//Get rno from client
+		//Get data from client
 		memset(buffer, 0, sizeof(buffer));//flush
+		printf("\t-> waiting for msg from tid #%d\n",tid);
 		read_return = recv( new_sock ,(void *) buffer, sizeof(buffer), 0 );
 		if(read_return<0){
-			perror("error in reading\n");
+			perror("\t-> error in reading\n");
 			exit(5);
 		}
 		else if(!read_return){	
-			printf("-> exiting\n");
+			printf("\t-> exiting, from tid #%d\n",tid);
 			break;
 		}
 		
-		printf("C: ");
-		for (int i = strlen(buffer)-1; i >=0; i--)
-		{
-			printf("%c",buffer[i]);
-		}
-
-		//scan only if all are done
-		// sem_wait(&sem_done);
-		// sem_wait(&sem);
-		// if(client_count==clients_read){
-			printf("\nS(provide ip):");
-			scanf("%[^\n]%*c", buffer);
-			if ( send( new_sock, buffer, read_return, 0) < 0 ){
-				perror("faied to send\n");
-				exit(6);
-			}
-		// }
-		// sem_post(&sem_done);
-		// sem_post(&sem);
+		printf("\tC, tid #%d: ", tid);
+		printf("%s\n",buffer);
 	}
-	close (new_sock);
 	//lock
-	// sem_wait(&sem);
+	sem_wait(&sem);
+	close (new_sock);
 	client_count--;
 	//unlock
-	// sem_post(&sem);
+	sem_post(&sem);
 	pthread_exit(NULL);
 }
 
 int main(int argc, char const *argv[])
 {
     client_count = 0;
-	clients_read = 0;
 	struct sockaddr_in address;
 	int addrlen;
 	sem_init(&sem,0,1);
-	sem_init(&sem_done,0,1);
-	// char buffer[MAXSIZE] = {0};
+	struct hostent *hostnet_str;
+	struct in_addr localaddr;
 	int PORT = 4444;
 	
 	if (argc >=2)//port
@@ -90,44 +93,58 @@ int main(int argc, char const *argv[])
 
 	//close sockets when ctrl+c
 	signal(SIGINT, intHandler);
+
 	//create socket with options: domain: AF_INET for ipv4, type: SOCK_STREAM for TCP, protocol: 0 for IP.
 	server_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(server_fd<0){
-		perror("failed to create socket\n");
+		perror("-> failed to create socket\n");
 		exit(1);
 	}
 
 	address.sin_family = AF_INET; //IP
-	address.sin_addr.s_addr = INADDR_ANY; // localhost/ kernel choses ip
+	address.sin_addr.s_addr = INADDR_ANY; //local ip of the machine
 	address.sin_port = htons( PORT ); //set port to 4444
 	//bind to a port and ip
 	if( bind( server_fd, (struct sockaddr *) &address, sizeof(address) ) < 0 ){
-		perror("failed to bind\n");
+		perror("-> failed to bind\n");
 		exit(2);//bind failed
+	}
+
+	char *hostname = malloc (MAXSIZE);
+	memset (hostname, 0, MAXSIZE);
+	gethostname (hostname, MAXSIZE);
+	hostnet_str = gethostbyname (hostname);
+	if(hostnet_str){
+		bcopy (*hostnet_str->h_addr_list++, (char *) &localaddr, sizeof (localaddr));
+		printf("-> bound to (ip:port) %s:%d\n",inet_ntoa(localaddr),PORT);
+	}
+	else{
+		printf("-> Error in getting hostname!");exit(EXIT_FAILURE);
 	}
 
 	//listen at a socket ->  accept connection requests, max qued connections set 1,
 	if( listen( server_fd, 3 ) < 0 ){
-		perror("failed to listen\n");
+		perror("-> failed to listen\n");
 		exit(3);//listen failed    
 	}
 
 	while(1)
 	{// NEW CLIENT
-		printf("-> waiting for new\n");
+		printf("-> waiting for new client\n");
 		struct sockaddr_in * new_addr = malloc(sizeof(struct sockaddr_in));
 		addrlen = sizeof(*new_addr);
 		int new_sock = accept( server_fd, (struct sockaddr *) new_addr, (socklen_t*)&addrlen );
 		
-		printf("-> rcvd_client %d\n", new_sock);
 		if(new_sock<0){
-			perror("error in accept\n");
+			perror("-> error in accept\n");
 			exit(4);
 		}
+		printf("-> rcvd_client %d\n", new_sock);
+
 		//lock 
 		sem_wait(&sem);
-		printf("-> checking_client\n");
-		if(client_count<4){
+		printf("-> checking if lim of %d reached, current count is %d\n",MAXCONN,client_count);
+		if(client_count<MAXCONN){
 			struct data_needed new_data;
 			new_data.new_sock = new_sock;
 			new_data.new_addr = new_addr;

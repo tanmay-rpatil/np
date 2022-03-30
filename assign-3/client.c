@@ -4,11 +4,8 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 #define MAXSIZE 1024
-
-
-
-
 
 int main(int argc, char const *argv[])
 {
@@ -17,8 +14,6 @@ int main(int argc, char const *argv[])
     char buffer[MAXSIZE] = {0};
     int port = 4444;
     int sock = 0;
-    char read_buffer[1024] = {0};
-	ssize_t read_return;
 
     if (argc >=3)//ip,port
     {
@@ -45,50 +40,48 @@ int main(int argc, char const *argv[])
     //convert IP addr binary
     if(inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) 
     {
-        printf("addess converesion error\n");
+        printf("# addess converesion error\n");
         exit (1);
     }
     int x = connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr));
     if ( x < 0)
     {
-        perror("Server Unreachable");
+        perror("# Server Unreachable");
         exit(1);
     }
-    // printf("conn:  %d",x);
+
+    ssize_t read_return = recv( sock ,(void *) buffer, sizeof(buffer), 0 );
+    if(read_return<0){
+        perror("# error in reading\n");
+        close(sock);
+        exit(1);
+    }
+    else if (read_return == 0)
+    {
+        printf("# Server refused connection\n");
+        close(sock);
+        exit(0);
+    }
+    
+    //connection est, keep sending data untill user types "quit"
+    printf("# Connection established! type msg after the prompt 'C>' \n");
 	while(1)
 	{
 		//send buffer
 		memset(buffer, 0, sizeof(buffer));//flush
-		printf("C: ");
+		printf("C>");
 		scanf("%[^\n]%*c", buffer);
-		if ( (strlen(buffer)==strlen("exit")) && (strncmp(buffer,"exit",strlen("exit"))==0))
+        printf("Scanned: %s\n",buffer);
+		if ( (strlen(buffer)==strlen("quit")) && (strncmp(buffer,"quit",strlen("quit"))==0))
 		{
 			printf("# exiting\n");
 			break;
 		}
 		if (send(sock, buffer, strlen(buffer), 0) < 0){
-			perror("error in send:");
+			perror("# error in send");
 			exit(1);
 		}
-
-		//get str from server
-		memset(read_buffer, 0, sizeof(read_buffer));//flush
-		read_return = recv(sock, read_buffer, sizeof(read_buffer), 0);
-		if(read_return<0){
-			perror("error in reading\n");
-			exit(1);
-		}
-        else if (read_return==0){
-            printf("# server rejected/closed connection\n");
-            break;
-        }
-
-		printf("S: ");
-		for (int i = strlen(read_buffer)-1; i >=0; i--)
-		{
-			printf("%c",read_buffer[i]);
-		}
-		printf("\n");
+        // sleep(1);
    }
     close(sock);
     exit(0);
